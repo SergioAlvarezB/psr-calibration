@@ -90,6 +90,9 @@ class LBFGS_Objective(VecModule):
         loss = self.loss()
         loss.backward()
         return loss.item(), self.get_gradvec()
+
+    def loss(self):
+        raise NotImplementedError
     
     
 def lbfgs(obj,maxiters,quiet=False):    
