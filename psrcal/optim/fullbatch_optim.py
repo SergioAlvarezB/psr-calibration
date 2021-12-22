@@ -51,13 +51,17 @@ def train_obj_scipy_lbfgs(obj, paramvec0, maxiters = 20, quiet=False):
 
     res = minimize(obj_cb, paramvec0, method="L-BFGS-B", jac=True, callback=cb, 
                    options={'maxiter':maxiters}) 
+
+
     if not quiet:
         print("scipy lbfgs termination status:")
         print(" ",res.message)
         print("  success:",res.success)
         print("  obj:",res.fun)
         print("  niters:",res.nit)
-        print("  nfun, ngrad:",res.nfev, res.njev)
+#        print("  nfun, ngrad:",res.nfev, res.njev)
+        # LF: res does not have njev when I run it for some reason ...
+        print("  nfun:",res.nfev)
         print()
         
     return res.x, res.fun, cb.scores
