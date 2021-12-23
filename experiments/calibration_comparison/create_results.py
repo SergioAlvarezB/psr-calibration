@@ -89,6 +89,7 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
     plt.ylim([miny*0.9, maxy*1.2])
     plt.xlabel("alpha")
     plt.ylabel("normalized cost")
+    plt.title("%s"%cost_family)
     plt.savefig("costs_%s_%s_%s.pdf"%(cost_family,dir,dset))
 
 
