@@ -18,7 +18,7 @@ def CostFunction(log_probs, labels, C, norm=False):
     costs = C[_decisions(probs),labels]
         
     if norm:
-        priors = (torch.bincount(labels)/labels.shape[0]).type(dtype=C.dtype)
+        priors = (torch.bincount(labels)/float(labels.shape[0])).type(dtype=C.dtype)
         naive_costs = C[_decisions(priors), labels]
         prior_cost = torch.mean(naive_costs)
     else:
@@ -33,7 +33,7 @@ def LogLoss(log_probs, labels, norm=False):
     ii = torch.arange(len(labels))
 
     if norm:
-        priors = torch.bincount(labels)/labels.shape[0]
+        priors = torch.bincount(labels)/float(labels.shape[0])
         prior_entropy = -torch.sum(priors * torch.log(priors))
     else:
         prior_entropy = 1.0

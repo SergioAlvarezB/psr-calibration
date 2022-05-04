@@ -12,7 +12,6 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
 
     scores = torch.tensor(np.concatenate(joblib.load("%s/%s/predictions"%(dir,dset))))
     labels = torch.tensor(np.concatenate(joblib.load("%s/%s/targets"%(dir,dset))), dtype=torch.int64)
-    data_prior  = np.bincount(labels)/labels.shape[0]
     logp_raw = scores - torch.logsumexp(scores, axis=-1, keepdim=True) 
 
     # Define a cost matrix with 0s in the diagonal, and 1s everywhere else
