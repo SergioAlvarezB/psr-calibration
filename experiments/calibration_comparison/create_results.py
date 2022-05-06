@@ -1,3 +1,4 @@
+import os
 import joblib
 import numpy as np
 from IPython import embed
@@ -9,14 +10,41 @@ import matplotlib.pyplot as plt
 def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_row'):
 
     # This code assumes that the priors in train and test are the same
+    scor_path = "{}/{}/predictions".format(dir,dset)
+    lab_path = "{}/{}/targets".format(dir,dset)
 
-    scores = torch.tensor(np.concatenate(joblib.load("%s/%s/predictions"%(dir,dset))))
-    labels = torch.tensor(np.concatenate(joblib.load("%s/%s/targets"%(dir,dset))), dtype=torch.int64)
-    logp_raw = scores - torch.logsumexp(scores, axis=-1, keepdim=True) 
+    if dir in ["emotion_ep12", "emotion_final"]:
+        scores = torch.tensor(np.concatenate(joblib.load(scor_path)))
+        labels = torch.tensor(np.concatenate(joblib.load(lab_path)), dtype=torch.int64)
+
+        # There is no validation set for these datasets
+        tst_scores = scores
+        tst_labels = labels
+
+        
+
+    elif dir in ['resnet-50_cifar10']:
+        scores = torch.as_tensor(np.load(scor_path + '.npy'), dtype=torch.float32)
+        labels = torch.as_tensor(np.load(lab_path + '.npy'), dtype=torch.int64)
+        if dset == 'val':
+            tst_scores = torch.as_tensor(np.load("{}/{}/predictions".format(dir,'tst') + '.npy'), dtype=torch.float32)
+            tst_labels = torch.as_tensor(np.load("{}/{}/targets".format(dir,'tst') + '.npy'), dtype=torch.int64)
+        else:
+            tst_scores = scores
+            tst_labels = labels
+
+    else:
+        raise ValueError('Not available data for {}'.format(dir))
+
+    logp_raw = tst_scores - torch.logsumexp(tst_scores, axis=-1, keepdim=True) 
 
     # Define a cost matrix with 0s in the diagonal, and 1s everywhere else
     # except for one column or row where the values are exp(alpha), with
     # varying alpha
+
+    # Number of classes
+    nclasses = scores.shape[1]
+
     cost0 = 1-np.eye(nclasses)
     cost_matrices = []
     min_alpha, max_alpha = [-1, 0] if cost_family == 'alpha_for_abstention' else [-4, 4]
@@ -37,13 +65,13 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
 
 
     def _get_metrics(scores):
-        xent = LogLoss(scores, labels, norm=True)
-        ece  = ECE(scores, labels)
-        bri  = Brier(scores, labels)
+        xent = LogLoss(scores, tst_labels, norm=True)
+        ece  = ECE(scores, tst_labels)
+        bri  = Brier(scores, tst_labels)
         table_metrics = [xent, bri, ece]
         costs = []
         for cost_matrix in cost_matrices:
-            costs.append(CostFunction(scores, labels, cost_matrix, norm=True).item())
+            costs.append(CostFunction(scores, tst_labels, cost_matrix, norm=True).item())
         return table_metrics, costs
 
     def _format_results(dset, dir, params, mname, mvals):
@@ -69,9 +97,9 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
         cal_out = dict()
 
         # Different ways of calibrating the scores. 
-        cal_out['Log']     = calibrate(scores, labels, AffineCalLogLoss,        bias=bias)
-        cal_out['Bri']     = calibrate(scores, labels, AffineCalBrier,          bias=bias)
-        cal_out['Log+w*ECE'] = calibrate(scores, labels, AffineCalLogLossPlusECE, bias=bias, ece_weight=ece_weight)
+        cal_out['Log']     = calibrate(tst_scores, labels, AffineCalLogLoss, scores,        bias=bias)
+        cal_out['Bri']     = calibrate(tst_scores, labels, AffineCalBrier, scores,          bias=bias)
+        cal_out['Log+w*ECE'] = calibrate(tst_scores, labels, AffineCalLogLossPlusECE, scores, bias=bias, ece_weight=ece_weight)
 
         for cal_type, (cal_scores, cal_params) in cal_out.items():
             table_metrics, costs = _get_metrics(cal_scores)
@@ -95,15 +123,14 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
 # Weight given to the ECE term when optimizing LogLoss + w * ECE for calibration
 ece_weight = 0.05
 
-# Number of classes
-nclasses = 4
-
 for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
 #for cost_family in ['alpha_for_abstention']:
 
     #for sys in ["emotion_ep12", "emotion_final"]:
-    for sys in ["emotion_final"]:
+    for sys in ["emotion_final", "resnet-50_cifar10"]:
 
         compute_and_print_results(sys, "trn", ece_weight=ece_weight, cost_family=cost_family)
         compute_and_print_results(sys, "tst", ece_weight=ece_weight, cost_family=cost_family)
+        if sys == 'resnet-50_cifar10':
+            compute_and_print_results(sys, "val", ece_weight=ece_weight, cost_family=cost_family)
 
