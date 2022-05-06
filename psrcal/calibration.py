@@ -64,10 +64,13 @@ class Obj(LBFGS_Objective):
 
 
 
-def calibrate(scores, labels, calclass, quiet=True, **kwargs):
+def calibrate(scores, labels, calclass, fit_scores=None, quiet=True, **kwargs):
 
-    obj = calclass(scores, labels, **kwargs)
+    if fit_scores is not None:
+        obj = calclass(fit_scores, labels, **kwargs)
+    else:
+        obj = calclass(scores, labels, **kwargs)
     paramvec, value, curve = lbfgs(obj, 100, quiet=quiet)
     
-    return obj.calibrate(obj.scores), [obj.temp, obj.bias] if obj.has_bias else [obj.temp]
+    return obj.calibrate(scores), [obj.temp, obj.bias] if obj.has_bias else [obj.temp]
 
