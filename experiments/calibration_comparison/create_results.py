@@ -92,6 +92,8 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
 
     color = {'Log': 'blue', 'Bri': 'red', 'Log+w*ECE': 'green'}
 
+    maxy = np.max(costs)
+    miny = np.min(costs)
     for bias in [True, False]:
 
         cal_out = dict()
@@ -108,8 +110,8 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
                 params += " ".join(["%5.2f "%f for f in cal_params[1]])
             _format_results(dset, dir, params, cal_type, table_metrics)
             plt.plot(alphas, costs, label=cal_type if bias else None, color=color[cal_type], linestyle='-' if bias else ':')
-            maxy = np.max(costs)
-            miny = np.min(costs)
+            maxy = max(maxy, np.max(costs))
+            miny = min(miny, np.min(costs))
         print("")
 
     plt.legend()
@@ -118,10 +120,14 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
     plt.ylabel("normalized cost")
     plt.title("%s"%cost_family)
     plt.savefig("costs_%s_%s_%s.pdf"%(cost_family,dir,dset))
+    plt.close()
 
 
 # Weight given to the ECE term when optimizing LogLoss + w * ECE for calibration
-ece_weight = 0.05
+ece_weight = {
+    'emotion_final': 0.05,
+    'resnet-50_cifar10': 0.2,
+}
 
 for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
 #for cost_family in ['alpha_for_abstention']:
@@ -129,8 +135,10 @@ for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
     #for sys in ["emotion_ep12", "emotion_final"]:
     for sys in ["emotion_final", "resnet-50_cifar10"]:
 
-        compute_and_print_results(sys, "trn", ece_weight=ece_weight, cost_family=cost_family)
-        compute_and_print_results(sys, "tst", ece_weight=ece_weight, cost_family=cost_family)
+        compute_and_print_results(sys, "trn", ece_weight=ece_weight[sys], cost_family=cost_family)
+        compute_and_print_results(sys, "tst", ece_weight=ece_weight[sys], cost_family=cost_family)
         if sys == 'resnet-50_cifar10':
-            compute_and_print_results(sys, "val", ece_weight=ece_weight, cost_family=cost_family)
+            compute_and_print_results(sys, "val", ece_weight=ece_weight[sys], cost_family=cost_family)
+            compute_and_print_results(sys, "tst_sh", ece_weight=ece_weight[sys], cost_family=cost_family)
+            compute_and_print_results(sys, "tst_sc", ece_weight=ece_weight[sys], cost_family=cost_family)
 
