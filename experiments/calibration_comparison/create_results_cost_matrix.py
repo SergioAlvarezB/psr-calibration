@@ -119,14 +119,14 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
     plt.xlabel("alpha")
     plt.ylabel("normalized cost")
     plt.title("%s"%cost_family)
-    plt.savefig("costs_%s_%s_%s.pdf"%(cost_family,dir,dset))
+    plt.savefig("results/costs_%s_%s_%s.pdf"%(cost_family,dir,dset))
     plt.close()
 
 
 # Weight given to the ECE term when optimizing LogLoss + w * ECE for calibration
 ece_weight = {
     'emotion_final': 0.05,
-    'resnet-50_cifar10': 0.2,
+    'resnet-50_cifar10': 0.05,
 }
 
 for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
