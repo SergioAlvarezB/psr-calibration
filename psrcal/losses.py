@@ -2,7 +2,7 @@ import numpy as np
 from IPython import embed
 from scipy.special import softmax
 import torch
-from psrcal.utils import onehot_encode
+from psrcal.utils import onehot_encode, check_label
 
 
 def CostFunction(log_probs, labels, C, norm=False):
@@ -28,7 +28,7 @@ def CostFunction(log_probs, labels, C, norm=False):
 
 
 
-def LogLoss(log_probs, labels, norm=False):
+def LogLoss(log_probs, labels, norm=False, _shift=False):
         
     ii = torch.arange(len(labels))
 
@@ -38,14 +38,22 @@ def LogLoss(log_probs, labels, norm=False):
     else:
         prior_entropy = 1.0
 
+    if _shift:
+        mask = torch.zeros(log_probs.shape)
+        mask[ii, labels] = 1
+        return -log_probs*mask/ prior_entropy
+
     return torch.mean(-log_probs[ii, labels])/ prior_entropy
 
 
-def Brier(log_probs, labels):
+def Brier(log_probs, labels, _shift):
         
     probs = torch.exp(log_probs)
     labels = onehot_encode(labels, n_classes=probs.shape[-1])
     losses = torch.sum((labels-probs)**2, dim=1)
+
+    if _shift:
+        return losses
 
     return torch.mean(losses)
 
@@ -80,4 +88,18 @@ def ECE(log_probs, target, M=15):
         ece += n*torch.abs(torch.mean(curr_confs)-curr_acc)
 
     return ece * 100/N
+
+
+
+def shift(loss, off):
+    K = off.shape[0]
+    eof = torch.exp(off)
+    So = K**0.5 * eof/eof.norm()
+
+    def shifted_loss(log_probs, labels):
+        label = check_label(labels, log_probs.shape[-1])
+        qs = torch.softmax(log_probs + off, dim=1)
+        return loss(torch.log(qs), label) @ So.reshape(-1, 1)
+
+    return shifted_loss
 

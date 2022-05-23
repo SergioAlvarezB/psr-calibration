@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 import torch
 import numpy as np
 
@@ -20,3 +22,13 @@ def onehot_encode(X, n_classes=None):
 def softmax(x, axis=None):
     e_x = np.exp(x - np.max(x, axis=axis, keepdims=True))
     return e_x / e_x.sum(axis=axis, keepdims=True)
+
+
+
+def check_label(label, dims):
+    if not isinstance(label, Iterable):
+        label = np.array([label]*dims[0])
+    if label.ndim < 2:
+        label = onehot_encode(label, n_classes=dims[1])
+
+    return label

@@ -75,14 +75,14 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
         return table_metrics, costs
 
     def _format_results(dset, dir, params, mname, mvals):
-        print("%3s  %-20s  %-35s   %-9s       "%(dset, dir, params, mname), end="")
+        print("%3s  %-20s  %-76s   %-9s       "%(dset, dir, params, mname), end="")
         print("".join(["%6.3f     "%m for m in mvals]))
 
 
     plt.figure(figsize=(10,5))
 
     print("--------------------------------------------------------------------------------------------------------------------")
-    print("Set  %-20s   %-34s   CalLoss          %-8s   %-8s   %-8s "%("System", "Transform", "Log", "Brier", "ECE"))
+    print("Set  %-20s   %-75s   CalLoss          %-8s   %-8s   %-8s "%("System", "Transform", "Log", "Brier", "ECE"))
     print("")
 
     table_metrics, costs = _get_metrics(logp_raw)
@@ -115,11 +115,14 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
         print("")
 
     plt.legend()
-    plt.ylim([miny*0.9, maxy*1.2])
+    if dir in ["emotion_ep12", "emotion_final"]:
+        plt.ylim([0.5, 1.2])
+    else:
+        plt.ylim([0, 1.2])
     plt.xlabel("alpha")
     plt.ylabel("normalized cost")
-    plt.title("%s"%cost_family)
-    plt.savefig("results/costs_%s_%s_%s.pdf"%(cost_family,dir,dset))
+    plt.title("%s \n %s"%(dset, cost_family))
+    plt.savefig("results/costs_%s_%s_%s.png"%(cost_family,dir,dset), dpi=300)
     plt.close()
 
 
@@ -141,4 +144,5 @@ for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
             compute_and_print_results(sys, "val", ece_weight=ece_weight[sys], cost_family=cost_family)
             compute_and_print_results(sys, "tst_sh", ece_weight=ece_weight[sys], cost_family=cost_family)
             compute_and_print_results(sys, "tst_sc", ece_weight=ece_weight[sys], cost_family=cost_family)
+            compute_and_print_results(sys, "tst_p", ece_weight=ece_weight[sys], cost_family=cost_family)
 

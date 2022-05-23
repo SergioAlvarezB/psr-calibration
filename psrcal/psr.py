@@ -1,18 +1,7 @@
-from collections.abc import Iterable
-
 import torch
 import numpy as np
 
-from psrcal.utils import onehot_encode
-
-
-def check_label(label, dims):
-    if not isinstance(label, Iterable):
-        label = np.array([label]*dims[0])
-    if label.ndim < 2:
-        label = onehot_encode(label, n_classes=dims[1])
-
-    return label
+from psrcal.utils import onehot_encode, check_label
 
 
 def logcost(q, label):
