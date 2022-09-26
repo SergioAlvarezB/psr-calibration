@@ -59,11 +59,9 @@ def train_obj_scipy_lbfgs(obj, paramvec0, maxiters = 20, quiet=False):
         print("  success:",res.success)
         print("  obj:",res.fun)
         print("  niters:",res.nit)
-#        print("  nfun, ngrad:",res.nfev, res.njev)
-        # LF: res does not have njev when I run it for some reason ...
         print("  nfun:",res.nfev)
         print()
         
-    return res.x, res.fun, cb.scores
+    return res.x, res.fun, cb.scores, res.success
 
     
