@@ -5,7 +5,7 @@ import torch
 from psrcal.utils import onehot_encode, check_label
 
 
-def CostFunction(log_probs, labels, C, norm=False):
+def CostFunction(log_probs, labels, C, norm=True):
 
     # Normalize the cost matrix
     C -= C.min(axis=0)
@@ -28,7 +28,7 @@ def CostFunction(log_probs, labels, C, norm=False):
 
 
 
-def LogLoss(log_probs, labels, norm=False, _shift=False):
+def LogLoss(log_probs, labels, norm=True, _shift=False):
         
     ii = torch.arange(len(labels))
 
@@ -46,7 +46,19 @@ def LogLoss(log_probs, labels, norm=False, _shift=False):
     return torch.mean(-log_probs[ii, labels])/ prior_entropy
 
 
-def Brier(log_probs, labels, _shift):
+def LogLossSE(log_probs, ref_log_probs, norm=True):
+        
+    if norm:
+        priors = torch.mean(torch.exp(ref_log_probs), axis=0)
+        prior_entropy = -torch.sum(priors * torch.log(priors))
+    else:
+        prior_entropy = 1.0
+
+    return torch.mean(torch.sum(-torch.exp(ref_log_probs) * log_probs, axis=1))/ prior_entropy
+
+
+
+def Brier(log_probs, labels, _shift=False):
         
     probs = torch.exp(log_probs)
     labels = onehot_encode(labels, n_classes=probs.shape[-1])
