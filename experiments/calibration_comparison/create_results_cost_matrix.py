@@ -3,48 +3,33 @@ import joblib
 import numpy as np
 from IPython import embed
 from psrcal.calibration import calibrate, AffineCalLogLoss, AffineCalLogLossPlusECE, AffineCalBrier
-from psrcal.losses import LogLoss, ECE, CostFunction, Brier
+from psrcal.losses import LogLoss, LogLossSE, ECE, CostFunction, Brier
 import torch
 import matplotlib.pyplot as plt
 
-def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_row'):
+colors = {'raw': 'k', 'Log': 'blue', 'Cal': 'blue', 'Bri': 'red', 'Log+w*ECE': 'green'}
 
-    # This code assumes that the priors in train and test are the same
-    scor_path = "{}/{}/predictions".format(dir,dset)
-    lab_path = "{}/{}/targets".format(dir,dset)
+def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family='alpha_in_row'):
 
-    if dir in ["emotion_ep12", "emotion_final"]:
-        scores = torch.tensor(np.concatenate(joblib.load(scor_path)))
-        labels = torch.tensor(np.concatenate(joblib.load(lab_path)), dtype=torch.int64)
+    # Load the scores for training the calibration models and for evaluation
+    trn_score_path = "{}/{}/predictions.npy".format(dir,trndset)
+    tst_score_path = "{}/{}/predictions.npy".format(dir,tstdset)
+    trn_label_path = "{}/{}/targets.npy".format(dir,trndset)
+    tst_label_path = "{}/{}/targets.npy".format(dir,tstdset)
 
-        # There is no validation set for these datasets
-        tst_scores = scores
-        tst_labels = labels
+    trn_scores = torch.as_tensor(np.load(trn_score_path), dtype=torch.float32)
+    tst_scores = torch.as_tensor(np.load(tst_score_path), dtype=torch.float32)
+    trn_labels = torch.as_tensor(np.load(trn_label_path), dtype=torch.int64)
+    tst_labels = torch.as_tensor(np.load(tst_label_path), dtype=torch.int64)
 
-        
+    # Normalize the scores in case they were unnormalized logits
+    # After this operation, we can treat the scores as (potentially miscalibrated)
+    # log posteriors
+    tst_scores -= torch.logsumexp(tst_scores, axis=-1, keepdim=True) 
+    trn_scores -= torch.logsumexp(trn_scores, axis=-1, keepdim=True) 
 
-    elif dir in ['resnet-50_cifar10']:
-        scores = torch.as_tensor(np.load(scor_path + '.npy'), dtype=torch.float32)
-        labels = torch.as_tensor(np.load(lab_path + '.npy'), dtype=torch.int64)
-        if dset == 'val':
-            tst_scores = torch.as_tensor(np.load("{}/{}/predictions".format(dir,'tst') + '.npy'), dtype=torch.float32)
-            tst_labels = torch.as_tensor(np.load("{}/{}/targets".format(dir,'tst') + '.npy'), dtype=torch.int64)
-        else:
-            tst_scores = scores
-            tst_labels = labels
-
-    else:
-        raise ValueError('Not available data for {}'.format(dir))
-
-    logp_raw = tst_scores - torch.logsumexp(tst_scores, axis=-1, keepdim=True) 
-
-    # Define a cost matrix with 0s in the diagonal, and 1s everywhere else
-    # except for one column or row where the values are exp(alpha), with
-    # varying alpha
-
-    # Number of classes
-    nclasses = scores.shape[1]
-
+    # Define various series of cost functions with varying alpha
+    nclasses = tst_scores.shape[1]
     cost0 = 1-np.eye(nclasses)
     cost_matrices = []
     min_alpha, max_alpha = [-1, 0] if cost_family == 'alpha_for_abstention' else [-4, 4]
@@ -64,33 +49,50 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
         cost_matrices.append(cost1)
 
 
-    def _get_metrics(scores):
+    def _get_metrics(scores, raw_scores=None):
         xent = LogLoss(scores, tst_labels, norm=True)
         ece  = ECE(scores, tst_labels)
         bri  = Brier(scores, tst_labels)
-        table_metrics = [xent, bri, ece]
+        table_metrics = [bri, ece, xent]
+
+        if raw_scores is not None:
+            # Assume scores is the calibrated version of raw_scores and compute 
+            # both versions of the cross-entropy decomposition (empirical and semi-empirical)
+            xent_raw    = LogLoss(raw_scores, tst_labels, norm=True)
+            xent_se_raw = LogLossSE(raw_scores, scores, norm=True) 
+            xent_se     = LogLossSE(scores, scores, norm=True) 
+            table_metrics += [xent_se, xent_raw, xent_se_raw]
+
         costs = []
         for cost_matrix in cost_matrices:
             costs.append(CostFunction(scores, tst_labels, cost_matrix, norm=True).item())
         return table_metrics, costs
 
-    def _format_results(dset, dir, params, mname, mvals):
-        print("%3s  %-20s  %-76s   %-9s       "%(dset, dir, params, mname), end="")
+
+    def _format_results(params, mname, mvals, has_bias=None):
+        if print_transform:
+            print("%6s  %6s  %-20s  %-76s   %-9s       "%(tstdset, trndset, dir, params, mname), end="")
+        else:
+            print("%6s  %6s  %-20s  %-8s  %-9s       "%(tstdset, trndset, dir, has_bias, mname), end="")
         print("".join(["%6.3f     "%m for m in mvals]))
 
 
     plt.figure(figsize=(10,5))
 
-    print("--------------------------------------------------------------------------------------------------------------------")
-    print("Set  %-20s   %-75s   CalLoss          %-8s   %-8s   %-8s "%("System", "Transform", "Log", "Brier", "ECE"))
-    print("")
+    print("-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------")
+    if print_transform:
+        print("TstSet   TrnSet %-20s   %-75s   "%("System", "Transform"), end='')
+    else:
+        print("TstSet   TrnSet %-20s  %8s   "%("System", "Has_bias"), end='')
+    print("CalLoss          %-10s %-10s %-10s %-10s %-10s %-10s\n"%("Brier", "ECE", "Log", "LogSE", "Log_precal", "LogSE_precal"))
+    
 
-    table_metrics, costs = _get_metrics(logp_raw)
-    _format_results(dset, dir, " None", "raw", table_metrics)
+    table_metrics, costs = _get_metrics(tst_scores)
+    _format_results(" None", "raw", table_metrics)
     print("")
-    plt.plot(alphas, costs, label="raw", color='k')
-
-    color = {'Log': 'blue', 'Bri': 'red', 'Log+w*ECE': 'green'}
+    plt.plot(alphas, costs, label="raw", color=colors['raw'])
+    print(cost_family)
+    print(np.c_[np.exp(alphas), costs])
 
     maxy = np.max(costs)
     miny = np.min(costs)
@@ -99,50 +101,48 @@ def compute_and_print_results(dir, dset, ece_weight=0.1, cost_family='alpha_in_r
         cal_out = dict()
 
         # Different ways of calibrating the scores. 
-        cal_out['Log']     = calibrate(tst_scores, labels, AffineCalLogLoss, scores,        bias=bias)
-        cal_out['Bri']     = calibrate(tst_scores, labels, AffineCalBrier, scores,          bias=bias)
-        cal_out['Log+w*ECE'] = calibrate(tst_scores, labels, AffineCalLogLossPlusECE, scores, bias=bias, ece_weight=ece_weight)
+        cal_out['Cal']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLoss,        bias=bias)
+        #cal_out['Bri']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalBrier,          bias=bias)
+        #priors = np.log(np.bincount(trn_labels)/float(trn_labels.shape[0]))
+        #cal_out['Log+w*ECE'] = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLossPlusECE, bias=bias, ece_weight=ece_weight, bias_init=priors)
 
-        for cal_type, (cal_scores, cal_params) in cal_out.items():
-            table_metrics, costs = _get_metrics(cal_scores)
+        for cal_type, (cal_tst_scores, cal_params) in cal_out.items():
+            table_metrics, costs = _get_metrics(cal_tst_scores, tst_scores)
             params = "%5.2f "%cal_params[0]
             if len(cal_params) > 1:
                 params += " ".join(["%5.2f "%f for f in cal_params[1]])
-            _format_results(dset, dir, params, cal_type, table_metrics)
-            plt.plot(alphas, costs, label=cal_type if bias else None, color=color[cal_type], linestyle='-' if bias else ':')
+            _format_results(params, cal_type, table_metrics, bias)
+            plt.plot(alphas, costs, label=cal_type+" with bias" if bias else cal_type+" no bias", color=colors[cal_type], linestyle='-' if bias else ':')
             maxy = max(maxy, np.max(costs))
             miny = min(miny, np.min(costs))
         print("")
 
     plt.legend()
-    if dir in ["emotion_ep12", "emotion_final"]:
-        plt.ylim([0.5, 1.2])
-    else:
-        plt.ylim([0, 1.2])
+#    plt.ylim([miny, maxy])
     plt.xlabel("alpha")
     plt.ylabel("normalized cost")
-    plt.title("%s \n %s"%(dset, cost_family))
-    plt.savefig("results/costs_%s_%s_%s.png"%(cost_family,dir,dset), dpi=300)
+    plt.title("%s %s \n cal trained on %s"%(tstdset, cost_family, trndset))
+    outres = "results/%s"%dir
+    if not os.path.isdir(outres):
+        os.makedirs(outres)
+    plt.savefig("%s/costs_%s_%s_%s.png"%(outres,cost_family,trndset,tstdset), dpi=300)
     plt.close()
 
 
 # Weight given to the ECE term when optimizing LogLoss + w * ECE for calibration
-ece_weight = {
-    'emotion_final': 0.05,
-    'resnet-50_cifar10': 0.05,
-}
+ece_weight = 1.0
+print_transform = True
 
 for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
 #for cost_family in ['alpha_for_abstention']:
 
     #for sys in ["emotion_ep12", "emotion_final"]:
-    for sys in ["emotion_final", "resnet-50_cifar10"]:
+    for sys in ["resnet-50_cifar10"]: #["spkr_verif", "resnet-50_cifar10"]:
 
-        compute_and_print_results(sys, "trn", ece_weight=ece_weight[sys], cost_family=cost_family)
-        compute_and_print_results(sys, "tst", ece_weight=ece_weight[sys], cost_family=cost_family)
-        if sys == 'resnet-50_cifar10':
-            compute_and_print_results(sys, "val", ece_weight=ece_weight[sys], cost_family=cost_family)
-            compute_and_print_results(sys, "tst_sh", ece_weight=ece_weight[sys], cost_family=cost_family)
-            compute_and_print_results(sys, "tst_sc", ece_weight=ece_weight[sys], cost_family=cost_family)
-            compute_and_print_results(sys, "tst_p", ece_weight=ece_weight[sys], cost_family=cost_family)
+#        compute_and_print_results(sys, "trn", "trn", ece_weight=ece_weight, cost_family=cost_family)
+        compute_and_print_results(sys, "tst", "tst", ece_weight=ece_weight, cost_family=cost_family)
 
+#        if sys == 'resnet-50_cifar10':
+#            compute_and_print_results(sys, "tst_sh", "tst_sh", ece_weight=ece_weight, cost_family=cost_family)
+#            compute_and_print_results(sys, "val", "tst", ece_weight=ece_weight, cost_family=cost_family)
+            
