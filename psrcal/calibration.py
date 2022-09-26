@@ -2,6 +2,7 @@ import torch
 from psrcal.optim.vecmodule import Parameter, LBFGS_Objective, lbfgs
 from psrcal import losses 
 from IPython import embed
+import numpy as np
 
 class AffineCal(LBFGS_Objective):
 
@@ -38,12 +39,12 @@ class AffineCalECE(AffineCal):
 
 class AffineCalLogLossPlusECE(AffineCal):
 
-    def __init__(self, scores, labels, ece_weight=1.0, bias=True):
+    def __init__(self, scores, labels, ece_weight=0.5, bias=True):
         super().__init__(scores, labels, bias)
         self.ece_weight = ece_weight
 
     def loss(self):
-        return losses.LogLoss(self.calibrate(self.scores), self.labels) + self.ece_weight * losses.ECE(self.calibrate(self.scores), self.labels)
+        return (1-self.ece_weight) * losses.LogLoss(self.calibrate(self.scores), self.labels) + self.ece_weight * losses.ECE(self.calibrate(self.scores), self.labels)
 
 
 class AffineCalBrier(AffineCal):
@@ -62,15 +63,14 @@ class Obj(LBFGS_Objective):
         return (X.T @ X).trace()
 
 
+def calibrate(trnscores, trnlabels, tstscores, calclass, quiet=True, **kwargs):
 
-
-def calibrate(scores, labels, calclass, fit_scores=None, quiet=True, **kwargs):
-
-    if fit_scores is not None:
-        obj = calclass(fit_scores, labels, **kwargs)
-    else:
-        obj = calclass(scores, labels, **kwargs)
-    paramvec, value, curve = lbfgs(obj, 100, quiet=quiet)
+    obj = calclass(trnscores, trnlabels, **kwargs)
     
-    return obj.calibrate(scores), [obj.temp, obj.bias] if obj.has_bias else [obj.temp]
+    paramvec, value, curve, success = lbfgs(obj, 100, quiet=quiet)
+    
+    if not success:
+        raise Exception("LBFGS was unable to converge")
+        
+    return obj.calibrate(tstscores), [obj.temp, obj.bias] if obj.has_bias else [obj.temp]
 
