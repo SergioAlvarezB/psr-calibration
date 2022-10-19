@@ -1,0 +1,4 @@
+Run as follows:
+
+PTYHONPATH=../../ python create_results_cost_matrix.py
+

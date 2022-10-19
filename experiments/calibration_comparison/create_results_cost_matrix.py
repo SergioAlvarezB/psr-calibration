@@ -12,10 +12,10 @@ colors = {'raw': 'k', 'Log': 'blue', 'Cal': 'blue', 'Bri': 'red', 'Log+w*ECE': '
 def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family='alpha_in_row'):
 
     # Load the scores for training the calibration models and for evaluation
-    trn_score_path = "{}/{}/predictions.npy".format(dir,trndset)
-    tst_score_path = "{}/{}/predictions.npy".format(dir,tstdset)
-    trn_label_path = "{}/{}/targets.npy".format(dir,trndset)
-    tst_label_path = "{}/{}/targets.npy".format(dir,tstdset)
+    trn_score_path = "data/{}/{}/predictions.npy".format(dir,trndset)
+    tst_score_path = "data/{}/{}/predictions.npy".format(dir,tstdset)
+    trn_label_path = "data/{}/{}/targets.npy".format(dir,trndset)
+    tst_label_path = "data/{}/{}/targets.npy".format(dir,tstdset)
 
     trn_scores = torch.as_tensor(np.load(trn_score_path), dtype=torch.float32)
     tst_scores = torch.as_tensor(np.load(tst_score_path), dtype=torch.float32)
@@ -89,10 +89,7 @@ def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family
 
     table_metrics, costs = _get_metrics(tst_scores)
     _format_results(" None", "raw", table_metrics)
-    print("")
     plt.plot(alphas, costs, label="raw", color=colors['raw'])
-    print(cost_family)
-    print(np.c_[np.exp(alphas), costs])
 
     maxy = np.max(costs)
     miny = np.min(costs)
@@ -101,10 +98,9 @@ def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family
         cal_out = dict()
 
         # Different ways of calibrating the scores. 
-        cal_out['Cal']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLoss,        bias=bias)
-        #cal_out['Bri']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalBrier,          bias=bias)
-        #priors = np.log(np.bincount(trn_labels)/float(trn_labels.shape[0]))
-        #cal_out['Log+w*ECE'] = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLossPlusECE, bias=bias, ece_weight=ece_weight, bias_init=priors)
+        cal_out['Log']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLoss,        bias=bias)
+        cal_out['Bri']       = calibrate(trn_scores, trn_labels, tst_scores, AffineCalBrier,          bias=bias)
+        #cal_out['Log+w*ECE'] = calibrate(trn_scores, trn_labels, tst_scores, AffineCalLogLossPlusECE, bias=bias, ece_weight=ece_weight)
 
         for cal_type, (cal_tst_scores, cal_params) in cal_out.items():
             table_metrics, costs = _get_metrics(cal_tst_scores, tst_scores)
@@ -115,7 +111,6 @@ def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family
             plt.plot(alphas, costs, label=cal_type+" with bias" if bias else cal_type+" no bias", color=colors[cal_type], linestyle='-' if bias else ':')
             maxy = max(maxy, np.max(costs))
             miny = min(miny, np.min(costs))
-        print("")
 
     plt.legend()
 #    plt.ylim([miny, maxy])
@@ -130,19 +125,17 @@ def compute_and_print_results(dir, trndset, tstdset, ece_weight=0.1, cost_family
 
 
 # Weight given to the ECE term when optimizing LogLoss + w * ECE for calibration
-ece_weight = 1.0
+ece_weight = 0.5
 print_transform = True
 
 for cost_family in ['alpha_in_col', 'alpha_in_row', 'alpha_for_abstention']:
-#for cost_family in ['alpha_for_abstention']:
 
-    #for sys in ["emotion_ep12", "emotion_final"]:
-    for sys in ["resnet-50_cifar10"]: #["spkr_verif", "resnet-50_cifar10"]:
+    for sys in ["emotion_ep12", "emotion_final", "spkr_verif", "resnet-50_cifar10"]:
 
-#        compute_and_print_results(sys, "trn", "trn", ece_weight=ece_weight, cost_family=cost_family)
+        compute_and_print_results(sys, "trn", "trn", ece_weight=ece_weight, cost_family=cost_family)
         compute_and_print_results(sys, "tst", "tst", ece_weight=ece_weight, cost_family=cost_family)
 
-#        if sys == 'resnet-50_cifar10':
-#            compute_and_print_results(sys, "tst_sh", "tst_sh", ece_weight=ece_weight, cost_family=cost_family)
-#            compute_and_print_results(sys, "val", "tst", ece_weight=ece_weight, cost_family=cost_family)
+        if sys == 'resnet-50_cifar10':
+            compute_and_print_results(sys, "tst_sh", "tst_sh", ece_weight=ece_weight, cost_family=cost_family)
+            compute_and_print_results(sys, "val", "tst", ece_weight=ece_weight, cost_family=cost_family)
             
