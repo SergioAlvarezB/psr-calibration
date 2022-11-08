@@ -6,14 +6,29 @@ import numpy as np
 
 class AffineCal(LBFGS_Objective):
 
-    def __init__(self, scores, labels, bias=True):
+    def __init__(self, scores, labels, bias=True, priors=None):
+        
+        # If priors are provided, ignore the data priors and use those ones instead
+        # In this case, the scores are taken to be log scaled likelihoods
+
         super().__init__()
 
         self.temp = Parameter(torch.tensor(1.0, dtype=torch.float64))
-        self.has_bias = bias
 
+        if priors is not None:
+            self.priors = torch.Tensor(priors)
+        else:
+            self.priors = None
+
+        self.has_bias = bias
         if bias:
-            self.bias = Parameter(torch.zeros(scores.shape[1], dtype=torch.float64))
+            if self.priors is not None:
+                # If external priors are provided, initialize the bias this way
+                # so that if the scores are perfectly calibrated for those priors
+                # the training process does not need to do anything.
+                self.bias = Parameter(-torch.log(self.priors))
+            else:
+                self.bias = Parameter(torch.zeros(scores.shape[1], dtype=torch.float64))
         else:
             self.bias = 0
 
@@ -22,6 +37,9 @@ class AffineCal(LBFGS_Objective):
 
     def calibrate(self, scores):
         self.cal_scores = self.temp * scores + self.bias
+        if self.priors is not None:
+            self.cal_scores += torch.log(self.priors)
+
         self.log_probs = self.cal_scores - torch.logsumexp(self.cal_scores, axis=-1, keepdim=True) 
         return self.log_probs
 
@@ -30,8 +48,8 @@ class AffineCal(LBFGS_Objective):
 
 class AffineCalLogLoss(AffineCal):
     def loss(self):
-        return losses.LogLoss(self.calibrate(self.scores), self.labels)
-
+        return losses.LogLoss(self.calibrate(self.scores), self.labels, priors=self.priors, norm=False)
+        
 
 class AffineCalECE(AffineCal):
     def loss(self):
@@ -49,7 +67,7 @@ class AffineCalLogLossPlusECE(AffineCal):
 
 class AffineCalBrier(AffineCal):
     def loss(self):
-        return losses.Brier(self.calibrate(self.scores), self.labels)
+        return losses.Brier(self.calibrate(self.scores), self.labels, norm=False)
 
 
 class Obj(LBFGS_Objective):

@@ -50,7 +50,7 @@ def train_obj_scipy_lbfgs(obj, paramvec0, maxiters = 20, quiet=False):
         return loss_np, grad_np
 
     res = minimize(obj_cb, paramvec0, method="L-BFGS-B", jac=True, callback=cb, 
-                   options={'maxiter':maxiters}) 
+                   options={'maxiter':maxiters, 'maxls':40}) 
 
 
     if not quiet:
@@ -60,6 +60,7 @@ def train_obj_scipy_lbfgs(obj, paramvec0, maxiters = 20, quiet=False):
         print("  obj:",res.fun)
         print("  niters:",res.nit)
         print("  nfun:",res.nfev)
+        print("  params:", res.x)
         print()
         
     return res.x, res.fun, cb.scores, res.success
