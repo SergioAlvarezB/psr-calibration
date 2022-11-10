@@ -144,7 +144,7 @@ def ECE(log_probs, target, M=15, return_values=False):
         return ece * 100/N
 
 
-def plot_reliability_diagram(scores, targets, outfile, nbins=15):
+def plot_reliability_diagram(scores, targets, outfile, nbins=15, title=''):
 
     metric_value, accs, confs, counts = ECE(scores, targets, return_values=True, M=nbins)
     plt.figure()
@@ -158,7 +158,8 @@ def plot_reliability_diagram(scores, targets, outfile, nbins=15):
     plt.xlabel("ave_conf")
     plt.ylim(0,1)
     plt.xlim(0,1)
-    plt.legend()
+    plt.legend(bbox_to_anchor=(1, 1))
+    plt.title(title)
     plt.savefig(outfile)
 
 
