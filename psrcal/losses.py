@@ -3,6 +3,7 @@ from IPython import embed
 from scipy.special import softmax
 import torch
 from psrcal.utils import onehot_encode, check_label
+import psrcal.calibration as psrcalcal
 import matplotlib.pyplot as plt
 
 def CostFunction(log_probs, labels, C=None, norm=True):
@@ -144,23 +145,100 @@ def ECE(log_probs, target, M=15, return_values=False):
         return ece * 100/N
 
 
-def plot_reliability_diagram(scores, targets, outfile, nbins=15, title=''):
+def ECE_v2(log_probs, target, M=15):
+    """ Computes the multi-class ECE using an alternative expression that makes it
+    evident that the ECE is doing calibration of confidences then computing
+    distance between the calibrated and original binned confidences. This gives
+    identical results to the ECE method above."""
 
-    metric_value, accs, confs, counts = ECE(scores, targets, return_values=True, M=nbins)
+    log_confs, preds = torch.max(log_probs, axis=1)
+
+    # Map the multi-class problem into a new binary problem of deciding whether 
+    # the system made the correct prediction or not
+    log_probs2 = log_confs
+    target = preds == target
+
+    # Calibrate the scores with histogram binning, training on test data (ie, cheating)
+    log_probs2_cal, params = psrcalcal.calibrate(log_probs2, target, log_probs2, psrcalcal.HistogramBinningCal)    
+    probs2_cal = torch.exp(log_probs2_cal)
+    probs2_binned = params[0]
+
+    # Compute the average absolute difference between those two scores
+    return torch.mean(torch.abs(probs2_cal-probs2_binned)) * 100
+
+
+def ECEbin(log_probs, target, M=15, return_values=False):
+    """"Computes the binary ECE score"""
+
+    probs = torch.exp(log_probs)
+    N = probs.shape[0]
+    assert probs.shape[1]==2
+    post2 = probs[:,1]
+    target = target.double()
+
+    # Generate intervals
+    limits = np.linspace(0, 1, num=M+1)
+    lows, highs = limits[:-1], limits[1:]
+    ece = 0
+    prop2s = []
+    avep2s = []
+    counts = []
+    for low, high in zip(lows, highs):
+        ix = (low < post2) & (post2 <= high)
+        n = torch.sum(ix)
+        if n==0:
+            continue
+        curr_post = post2[ix]
+        curr_target = target[ix]
+        avep2 = torch.mean(curr_post)
+        prop2 = torch.mean(curr_target)
+        avep2s.append(avep2.detach().numpy())
+        prop2s.append(prop2.detach().numpy())
+        counts.append(n.detach().numpy())
+        ece += n*torch.abs(avep2-prop2)
+
+    if return_values:
+        return ece * 100/N, np.array(prop2s), np.array(avep2s), np.array(counts)
+    else:
+        return ece * 100/N
+
+
+def ECEbin_v2(log_probs, target, M=15):
+    """"Computes the binary ECE using an alternative expression
+    that makes it evident that the ECE is doing calibration and 
+    then computing distance between the calibrated and original
+    binned scores. This gives identical results to the ECEbin
+    method above."""
+
+    assert log_probs.shape[1]==2
+    log_probs2 = log_probs[:,1]
+
+    # Calibrate the scores with histogram binning, training on test data (ie, cheating)
+    log_probs2_cal, params = psrcalcal.calibrate(log_probs2, target, log_probs2, psrcalcal.HistogramBinningCal)    
+    probs2_cal = torch.exp(log_probs2_cal)
+    probs2_binned = params[0]
+
+    # Compute the average absolute difference between those two scores
+    return torch.mean(torch.abs(probs2_cal-probs2_binned)) * 100
+
+
+def plot_reliability_diagram(ys, xs, counts, outfile=None, nbins=15, title=''):
+
     plt.figure()
-    plt.plot(confs, accs, "-*", label="ave_acc")
-    plt.plot(confs, np.abs(confs-accs), "-*", label="abs(ave_acc-ave_conf)")
-    plt.plot(confs, counts/np.sum(counts), "-*", label="fraction_of_samples")
-    plt.plot(confs, counts/np.sum(counts)*np.abs(confs-accs), "-*", label="n/N * abs(ave_acc-ave_conf)")
-    #for acc, conf, count in zip(accs, confs, counts):
-    #  plt.annotate(str(count),  xy=(conf, np.abs(conf-acc)))
+    plt.plot(xs, ys, "-*", label="prop_class2")
+    plt.plot(xs, np.abs(xs-ys), "-*", label="abs(prop_class2-ave_post)")
+    plt.plot(xs, counts/np.sum(counts), "-*", label="fraction_of_samples")
+    plt.plot(xs, counts/np.sum(counts)*np.abs(xs-ys), "-*", label="n/N * abs(prop_class2-ave_post)")
+    #for acc, conf, count in zip(ys, confs, counts):
+    #  plt.annotate(str(count),  xy=(conf, np.abs(xs-ys)))
     plt.plot([0,1],[0,1],':k')
-    plt.xlabel("ave_conf")
+    plt.xlabel("ave_post")
     plt.ylim(0,1)
     plt.xlim(0,1)
     plt.legend(bbox_to_anchor=(1, 1))
     plt.title(title)
-    plt.savefig(outfile)
+    if outfile is not None:
+        plt.savefig(outfile)
 
 
 
